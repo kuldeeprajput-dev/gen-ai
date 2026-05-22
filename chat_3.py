@@ -2,51 +2,112 @@ from dotenv import load_dotenv
 from openai import OpenAI
 import json
 import os
-load_dotenv()
 
+load_dotenv()
 
 client = OpenAI(
     api_key=os.environ.get("GROQ_API_KEY"),
     base_url="https://api.groq.com/openai/v1",
 )
 
-system_prompt="""
-You are and Ai assistant who is expert in breaking down complex problem's and then resolve the user query 
-For the given user input analyze the input and break down the problem step by the step atleast think 5,6 step  on how to solve the problem before solving it down.
-The steps are you gett a user input, you analyze , you think , you again think for serveral time and then return output with explanationl and the finally you validate the output as will before giving finale resultl.
+system_prompt = """
+You are an AI assistant who is expert in breaking down complex problems and solving user queries step-by-step.
 
-Follow the steps is sequence that is "analyze","think","output","validate","result"
+For every user query:
+1. Analyze the problem carefully
+2. Think step-by-step multiple times before solving
+3. Generate the output
+4. Validate the output
+5. Return the final result with explanation
+
+You must strictly follow this sequence:
+"analyze" -> "think" -> "output" -> "validate" -> "result"
 
 Rules:
-1.Follow the strict JSON output as per Output schema.
-2.Always perform one step at a time and wait for nextt input
-3.Carefully analyze the user query
+1. Always return ONLY ONE valid JSON object
+2. Never return markdown
+3. Never return text outside JSON
+4. Always follow the exact output schema
+5. Perform only ONE step at a time
+6. Carefully analyze the user query
+7. Output must always be valid parsable JSON
 
 Output Format:
-{{step:"string",content:"string"}}
+{
+    "step":"string",
+    "content":"string"
+}
 
 Example:
-Input: What is 2 + 2.
-Output :{{step:"analyze",content:"Alright ! The user is intersted in maths query and he is asking for basic arthematic operations}}
-Output:{{step:"think",content:"To perform the addition i must go from left to right and and all the operands"}}
-Output:{{step:"output",content:"4"}}
-Output:{{step:"validate,content:"seems like 4 is correct ans for 2 +2"}}
-Output:{{step:"result",content:"2 + 2 = 4 and that is calculated by adding all numbers"}}
+
+Input:
+What is 2 + 2?
+
+Output:
+{
+    "step":"analyze",
+    "content":"The user is asking a basic arithmetic addition problem."
+}
+
+Output:
+{
+    "step":"think",
+    "content":"To solve the expression I should add 2 and 2 together."
+}
+
+Output:
+{
+    "step":"output",
+    "content":"4"
+}
+
+Output:
+{
+    "step":"validate",
+    "content":"The calculation is correct because adding 2 and 2 results in 4."
+}
+
+Output:
+{
+    "step":"result",
+    "content":"2 + 2 = 4"
+}
 """
+
+messages = [
+    {"role": "system", "content": system_prompt},
+
+    {"role": "user", "content": "what is 3 + 4 * 5"},
+
+    {
+        "role": "assistant",
+        "content": json.dumps({
+            "step": "analyze",
+            "content": "The user is asking to solve the arithmetic expression 3 + 4 * 5. This requires applying the order of operations."
+        })
+    },
+
+    {
+        "role": "assistant",
+        "content": json.dumps({
+            "step": "think",
+            "content": "According to BODMAS/PEMDAS rules, multiplication should be performed before addition. First compute 4 * 5 = 20, then add 3 to get 23."
+        })
+    },
+
+    {
+        "role": "assistant",
+        "content": json.dumps({
+            "step": "output",
+            "content": "23"
+        })
+    }
+]
 
 response = client.chat.completions.create(
     model="openai/gpt-oss-120b",
-    response_format={"type":"json_object"},
-    messages=[
-        {"role":"system","content":system_prompt},
-        {"role":"user","content":"what is 3 + 4 * 5"},
-
-        {"role":"assistant","content":json.dumps({"step":"analyze","content":"The user asks for the result of the arithmetic expression 3 + 4 * 5, which involves both addition and multiplication and requires applying the order of operations (PEMDAS/BODMAS)."})},
-
-        {"role":"assistant","content":json.dumps({"step":"think","content":"To compute the expression, first perform the multiplication (4 * 5 = 20) then add the result to 3, yielding 3 + 20 = 23. I will follow this order of operations."})},
-
-        {"role":"assistant","content":json.dumps({"step":"output","content":"23"})},
-    ]
-   
+    response_format={"type": "json_object"},
+    messages=messages
 )
+
 print(response.choices[0].message.content)

@@ -4,113 +4,261 @@ import json
 import os
 import requests
 
+
 load_dotenv()
+
 
 client = OpenAI(
     api_key=os.environ.get("GROQ_API_KEY"),
     base_url="https://api.groq.com/openai/v1",
 )
-def get_weather(city:str):
-    print("< Tool Called:get_weather",city)
-    url= f"https://wttr.in/{city}?format=%C+%t"
-    response=requests.get(url)
 
-    if response.status_code == 200:
-        return f"The weather in {city} is {response.text}."
-    return "Something went wrong"
 
-available_tools ={
-    "get_weather":{
-        "fn":get_weather,
-        "description":"takes a city name as an input and returns the current weather for the city"
+
+def get_weather(city: str):
+    print(f"< Tool Called: get_weather > {city}")
+
+    url = f"https://wttr.in/{city}?format=%C+%t"
+
+    try:
+        response = requests.get(url)
+
+        if response.status_code == 200:
+            return f"The weather in {city} is {response.text}"
+
+        return "Weather API failed"
+
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+
+def add(x, y):
+    print(f"< Tool Called: add > {x}, {y}")
+    return x + y
+
+
+
+
+available_tools = {
+    "get_weather": {
+        "fn": get_weather,
+        "description": "Takes a city name as input and returns current weather"
+    },
+
+    "add": {
+        "fn": add,
+        "description": "Takes two numbers x and y and returns x + y"
     }
 }
 
+
+
 system_prompt = """
-You are an helpfull At Assistant who is specialized in resolving user query.
-You work on start , plan , action , observe mode.
-For the given user query and available tools, plan the step by step execution, based on the planning,
-select the relevant tool from the available  tool. and based on the tool selection you perform an action to  call the tool wait for the observation and based on the observation from the tool call resolve the user query.
+You are a helpful AI Assistant specialized in solving user queries.
 
-Rules:
-- Follow the Output JSON Format.
-- Always perform one step at a time and wait for next input
-- Carefully analyse the user query
+You work in the following modes:
+1. plan
+2. action
+3. observe
+4. output
 
-Output JSON Format:
-{{
-"step":"string",
-"content":"string",
-"function":"The name of function if the step is action",
-"input":"The input parameter for the function",
-}}
+Your job:
+- Understand the user query
+- Plan step-by-step
+- Select the correct tool
+- Execute ONE tool at a time
+- Wait for observation
+- Finally answer the user
+
+STRICT RULES:
+- Always return ONLY ONE valid JSON object
+- Never return multiple JSON objects
+- Never return markdown
+- Never return text outside JSON
+- Output must always be valid parsable JSON
+- Perform only ONE step at a time
+- Carefully analyze the user query
+
+Output JSON format:
+
+{
+    "step": "plan | action | observe | output",
+    "content": "string",
+    "function": "string",
+    "input": "string or object"
+}
 
 Available Tools:
-- get_weather:Takes a city name as an input and returns the current weather for the city
 
-Example:
-User Query: What is the weather of new york?
-Output:{{"step":"plan","content":"The user is intereseted inn weather data of new york"}}
-Output:{{"step":"plan","content":"From the available tools I should call get_weather"}}
-Output:{{"step:"action","function":"get_weather","input":"new york"}}
-Output:{{"step:"observe","output":"12 Degree Cel"}}
-Output:{{"step:"output","content":"The weather for new york seems to be 12 degress."}}
+1. get_weather
+   Description:
+   Takes a city name and returns current weather.
+
+   Example:
+   {
+      "step":"action",
+      "function":"get_weather",
+      "input":"Delhi"
+   }
+
+2. add
+   Description:
+   Takes two numbers and returns their sum.
+
+   Example:
+   {
+      "step":"action",
+      "function":"add",
+      "input":{
+          "x":10,
+          "y":20
+      }
+   }
+
+Example Flow:
+
+User:
+What is the weather in Delhi?
+
+Assistant:
+{
+   "step":"plan",
+   "content":"The user wants weather information for Delhi"
+}
+
+Assistant:
+{
+   "step":"plan",
+   "content":"I should use the get_weather tool"
+}
+
+Assistant:
+{
+   "step":"action",
+   "function":"get_weather",
+   "input":"Delhi"
+}
+
+Assistant:
+{
+   "step":"output",
+   "content":"The weather in Delhi is Sunny 32C"
+}
 """
 
-messages=[
-    {"role":"system","content":system_prompt}
+
+
+messages = [
+    {
+        "role": "system",
+        "content": system_prompt
+    }
 ]
 
-user_query=input("> ")
-messages.append({"role":"user","content":user_query})
+
+
+user_query = input("> ")
+
+messages.append({
+    "role": "user",
+    "content": user_query
+})
+
+
 
 while True:
-    response=client.chat.completions.create(
-        model="openai/gpt-oss-20b",
-        response_format={"type":"json_object"},
+
+    response = client.chat.completions.create(
+        model="openai/gpt-oss-120b",
+        response_format={"type": "json_object"},
         messages=messages
     )
 
-    parsed_output=json.loads(response.choices[0].message.content)
+    raw_output = response.choices[0].message.content
 
-    messages.append({"role":"assistant","content":json.dumps(parsed_output)})
 
-    if parsed_output.get("step")=="plan":
-         print(f"🧠:{parsed_output.get("content")}")
-         continue
-    
-    if parsed_output.get("step")=="action":
-        tool_name=parsed_output.get("function")
-        tool_input=parsed_output.get("input")
+    print("\nRAW MODEL OUTPUT:")
+    print(raw_output)
 
-        if available_tools.get(tool_name,False) !=False:
-            output=available_tools[tool_name].get("fn")(tool_input)
-            messages.append({"role":"assistant","content":json.dumps({"step":"observe","output": output})})
+
+    try:
+        parsed_output = json.loads(raw_output)
+
+    except json.JSONDecodeError:
+        print("\n❌ Invalid JSON generated by model")
+        break
+
+    messages.append({
+        "role": "assistant",
+        "content": json.dumps(parsed_output)
+    })
+
+    step = parsed_output.get("step")
+
+
+
+    if step == "plan":
+
+        print(f"\n🧠: {parsed_output.get('content')}")
+        continue
+
+
+    elif step == "action":
+
+        tool_name = parsed_output.get("function")
+        tool_input = parsed_output.get("input")
+
+        if tool_name not in available_tools:
+
+            print(f"\n❌ Tool '{tool_name}' not found")
+            break
+
+        try:
+
+        
+            if tool_name == "add":
+
+                output = available_tools[tool_name]["fn"](
+                    tool_input["x"],
+                    tool_input["y"]
+                )
+
+            else:
+
+                output = available_tools[tool_name]["fn"](
+                    tool_input
+                )
+
+
+            observation = {
+                "step": "observe",
+                "content": str(output)
+            }
+
+            print(f"\n👀 Observation: {output}")
+
+            messages.append({
+                "role": "assistant",
+                "content": json.dumps(observation)
+            })
+
             continue
 
-    if parsed_output.get("step")=="output":
-        print(f"🤖:{parsed_output.get("content")}")
+        except Exception as e:
+
+            print(f"\n❌ Tool execution failed: {str(e)}")
+            break
+
+
+
+    elif step == "output":
+
+        print(f"\n🤖: {parsed_output.get('content')}")
         break
 
 
+    else:
 
-
-
-
-
-
-
-# response = client.chat.completions.create(
-#     model="openai/gpt-oss-120b",
-#     response_format={"type":"json_object"},
-#     messages=[
-#          {"role":"system","content":system_prompt},
-#          {"role":"user","content":"What is the current weather of delhi?"},
-#          {"role":"assistant","content":json.dumps({"step":"plan","content":"User wants the current weather information for Delhi."})},
-#          {"role":"assistant","content":json.dumps({"step":"plan","content":"From the available tools I should call get_weather"})},
-#          {"role":"assistant","content":json.dumps({"step":"action","function":"get_weather","input":"Delhi"})},
-#          {"role":"assistant","content":json.dumps({"step":"observe","content":"31 degree Celsius"})}
-#     ]
-# )
-
-# print(response.choices[0].message.content)   
+        print("\n❌ Unknown step received")
+        print(parsed_output)
+        break
