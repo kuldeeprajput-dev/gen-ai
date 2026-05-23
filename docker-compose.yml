@@ -1,0 +1,10 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11435:11434"
+    volumes:
+      - models:/root/.ollama
+
+volumes:
+  models:
